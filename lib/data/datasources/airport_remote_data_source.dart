@@ -1,4 +1,3 @@
-
 // lib/data/datasources/airport_remote_data_source.dart
 import '../../core/constants/api_constants.dart';
 import '../../core/errors/exceptions.dart';
@@ -36,7 +35,8 @@ class AirportRemoteDataSourceImpl implements AirportRemoteDataSource {
   }
 
   @override
-  Future<List<AirportModel>> getAirportsByEmailDomain(String emailDomain) async {
+  Future<List<AirportModel>> getAirportsByEmailDomain(
+      String emailDomain) async {
     try {
       final request = EmailDomainRequest(emailDomain: emailDomain);
       final response = await client.post(
@@ -46,30 +46,40 @@ class AirportRemoteDataSourceImpl implements AirportRemoteDataSource {
 
       // Check if response is successful and has resultArray
       if (response['statusCode'] == 200) {
-        // Handle case where resultArray could be null or empty
         final resultArray = response['resultArray'];
         if (resultArray == null) {
           return [];
         }
 
-        // Map resultArray to AirportModels with additional null checks
+        // If the resultArray contains airportCodes (not full airport objects), map them to full airports
+        if (resultArray is List &&
+            resultArray.isNotEmpty &&
+            resultArray[0]['airportCodes'] != null) {
+          // Fetch all deployed airports
+          final allAirports = await getDeployedAirports();
+          final codes = List<String>.from(resultArray[0]['airportCodes']);
+          return allAirports
+              .where((a) => codes.contains(a.airportCode))
+              .toList();
+        }
+
+        // Otherwise, assume resultArray contains full airport objects
         return (resultArray as List)
             .map((airportJson) {
-          // Ensure all required fields are present and not null
-          if (airportJson['airportCode'] == null ||
-              airportJson['airportName'] == null ||
-              airportJson['airportLogo'] == null) {
-            print('Warning: Airport data has null fields: $airportJson');
-            return null;
-          }
-          return AirportModel.fromJson(airportJson);
-        })
-            .where((model) => model != null) // Filter out null models
-            .cast<AirportModel>() // Cast to the required type
+              if (airportJson['airportCode'] == null ||
+                  airportJson['airportName'] == null ||
+                  airportJson['airportLogo'] == null) {
+                print('Warning: Airport data has null fields: $airportJson');
+                return null;
+              }
+              return AirportModel.fromJson(airportJson);
+            })
+            .where((model) => model != null)
+            .cast<AirportModel>()
             .toList();
       } else {
-        // Extract error message if available
-        final errorMessage = response['message'] ?? 'Failed to get airports by email domain';
+        final errorMessage =
+            response['message'] ?? 'Failed to get airports by email domain';
         throw ServerException(message: errorMessage);
       }
     } on ServerException {
